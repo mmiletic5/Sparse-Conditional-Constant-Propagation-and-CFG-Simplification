@@ -26,5 +26,7 @@ exit:
 }
 
 int main() {
-    return test_sccp();
+    int r1 = test_sccp();
+    int r2 = test_cfg(42);
+    return r1 + r2;
 }

@@ -32,5 +32,8 @@ int test_unknown_condition(int a) {
 }
 
 int main() {
-    return test_false_branch();
+    int r1 = test_false_branch();
+    int r2 = test_phi_same_constant();
+    int r3 = test_unknown_condition(5);
+    return r1 + r2 + r3;
 }

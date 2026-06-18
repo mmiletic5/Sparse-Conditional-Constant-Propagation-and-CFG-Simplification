@@ -46,10 +46,11 @@ for C_FILE in "$TEST_DIR"/*.c; do
     ./bin/opt -mem2reg -S -enable-new-pm=0 \
         -o "$SSA_LL" "$RAW_LL"
 
-    echo "[3] OurSCCP"
+    echo "[3] OurSCCP + OurSimplifyCFG"
     ./bin/opt -load "$PASS_LIB" -enable-new-pm=0 \
-        -oursccp  -verify \
+        -oursccp -oursimplifycfg -verify \
         -S "$SSA_LL" -o "$FULL_LL"
+
 
     echo "[4] verify final IR"
     ./bin/opt -enable-new-pm=0 -verify -S "$FULL_LL" -o /dev/null
