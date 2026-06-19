@@ -1,6 +1,13 @@
 # Sparse-Conditional-Constant-Propagation-and-CFG-Simplification
 Project for the Compiler Construction course at the Faculty of Mathematics on the topic of Sparse Conditional Constant Propagation (SCCP) and CFG simplification.
 
+**Sparse Conditional Constant Propagation (SCCP)** is a compiler optimization technique that combines constant propagation with reachability analysis. By analyzing only feasible execution paths, SCCP identifies variables that remain constant at specific program points and replaces them with their actual values.  This often enables further optimizations such as dead code elimination and branch simplification.
+
+**Control-Flow Graph (CFG) Simplification** is an optimization that reduces the structural complexity of a program's control-flow graph. It removes unreachable basic blocks, merges redundant branches and linear sequences of blocks, and eliminates unnecessary control-flow constructs. These transformations improve code readability and create opportunities for additional compiler optimizations.
+
+The two optimizations complement each other: SCCP can expose unreachable code and simplify conditional branches, while CFG Simplification removes the resulting redundant control-flow structures, enabling more effective optimization of the generated IR.
+
+
 ## Build and Run Instructions
 
 First, download the LLVM project by running the script provided by the course:
