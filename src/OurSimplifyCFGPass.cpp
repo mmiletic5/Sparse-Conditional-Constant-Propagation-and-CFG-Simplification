@@ -38,13 +38,24 @@ struct OurSimplifyCFGPass : public FunctionPass {
                 Changed    = true;
                 AnyChanged = true;
 
-                for (auto *Succ : successors(BB))
-                    Succ->removePredecessor(BB);
+                // Avoid removing already threaded PHI predecessors
+                for (auto *Succ : successors(BB)) {
+                    bool StillReferenced = false;
+                    for (auto &InstRef : *Succ) {
+                        PHINode *Phi = dyn_cast<PHINode>(&InstRef);
+                        if (!Phi) break;
+                        if (Phi->getBasicBlockIndex(BB) >= 0) {
+                            StillReferenced = true;
+                            break;
+                        }
+                    }
+                    if (StillReferenced)
+                        Succ->removePredecessor(BB);
+                }
 
                 for (auto &InstRef : *BB)
                     if (!InstRef.getType()->isVoidTy() && !InstRef.use_empty())
-                        InstRef.replaceAllUsesWith(
-                            UndefValue::get(InstRef.getType()));
+                        InstRef.replaceAllUsesWith(UndefValue::get(InstRef.getType()));
 
                 while (!BB->empty())
                     BB->back().eraseFromParent();
@@ -152,6 +163,30 @@ struct OurSimplifyCFGPass : public FunctionPass {
                 for (auto *Pred : predecessors(&BB))
                     Preds.push_back(Pred);
 
+                // Skip blocks with no predecessors
+                if (Preds.empty()) continue;
+
+                // Check for conflicting PHI incoming values
+                bool ConflictingPred = false;
+                for (auto &InstRef : *Succ) {
+                    PHINode *Phi = dyn_cast<PHINode>(&InstRef);
+                    if (!Phi) break;
+
+                    int Idx = Phi->getBasicBlockIndex(&BB);
+                    if (Idx < 0) continue;
+
+                    Value *ValFromBB = Phi->getIncomingValue(Idx);
+
+                    for (auto *Pred : Preds) {
+                        int PredIdx = Phi->getBasicBlockIndex(Pred);
+                        if (PredIdx >= 0 && Phi->getIncomingValue(PredIdx) != ValFromBB)
+                            ConflictingPred = true;
+                    }
+                }
+                
+                // Skip if PHI values conflict
+                if (ConflictingPred) continue;
+
                 errs() << "[SimplifyCFG] eliminateRedundantBranch: threading "
                        << BB.getName() << " -> " << Succ->getName() << "\n";
 
@@ -164,8 +199,12 @@ struct OurSimplifyCFGPass : public FunctionPass {
 
                     Value *ValFromBB = Phi->getIncomingValue(Idx);
 
-                    for (auto *Pred : Preds)
+                    for (auto *Pred : Preds) {
+                        
+                        // Skip existing PHI entries
+                        if (Phi->getBasicBlockIndex(Pred) >= 0) continue;
                         Phi->addIncoming(ValFromBB, Pred);
+                    }
 
                     Phi->removeIncomingValue(Idx, /*DeletePHIIfEmpty=*/false);
                 }
