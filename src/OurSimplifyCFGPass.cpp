@@ -55,7 +55,8 @@ struct OurSimplifyCFGPass : public FunctionPass {
 
                 for (auto &InstRef : *BB)
                     if (!InstRef.getType()->isVoidTy() && !InstRef.use_empty())
-                        InstRef.replaceAllUsesWith(UndefValue::get(InstRef.getType()));
+                        InstRef.replaceAllUsesWith(
+                            UndefValue::get(InstRef.getType()));
 
                 while (!BB->empty())
                     BB->back().eraseFromParent();

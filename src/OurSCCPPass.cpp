@@ -1,7 +1,15 @@
 #include "OurSCCPPass.h"
-#include "llvm/Analysis/ConstantFolding.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/DataLayout.h"
+#include "llvm/Pass.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/Support/raw_ostream.h"
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include <queue>
 using namespace llvm;
 
 namespace {
@@ -32,12 +40,6 @@ struct OurSCCPPass : public FunctionPass {
         return it->second;
     }
 
-    /*
-     * markOverdefined
-     * Moves V's lattice entry to OVERDEFINED.
-     * If the state actually changed, pushes V onto the SSA worklist so that
-     * all instructions that use V will be re-evaluated.
-     */
     void markOverdefined(Value *V) {
         if (getLattice(V).markOverdefined()) {
             errs() << "[SCCP] markOverdefined: " << V->getName() << "\n";
@@ -118,7 +120,7 @@ struct OurSCCPPass : public FunctionPass {
         }
     }
 
-    void visitBinaryOp(BinaryOperator *BI, const DataLayout &DL) {
+    void visitBinaryOp(BinaryOperator *BI) {
         errs() << "[SCCP] visitBinaryOp: " << BI->getName()
                << " (" << BI->getOpcodeName() << ")\n";
 
@@ -130,19 +132,20 @@ struct OurSCCPPass : public FunctionPass {
             return;
         }
         if (LHS.isConstant() && RHS.isConstant()) {
-            if (Constant *Folded = ConstantFoldInstruction(BI, DL)) {
+            Constant *Folded = ConstantExpr::get(BI->getOpcode(),
+                                                 LHS.ConstVal, RHS.ConstVal);
+            if (Folded) {
                 errs() << "[SCCP]   folded to " << *Folded << "\n";
                 markConstant(BI, Folded);
                 return;
             }
-
             markOverdefined(BI);
             return;
         }
         errs() << "[SCCP]   waiting (operand(s) undef)\n";
     }
 
-    void visitCmpInst(CmpInst *CI, const DataLayout &DL) {
+    void visitCmpInst(CmpInst *CI) {
         errs() << "[SCCP] visitCmpInst: " << CI->getName() << "\n";
 
         LatticeVal &LHS = getLattice(CI->getOperand(0));
@@ -153,7 +156,9 @@ struct OurSCCPPass : public FunctionPass {
             return;
         }
         if (LHS.isConstant() && RHS.isConstant()) {
-            if (Constant *Folded = ConstantFoldInstruction(CI, DL)) {
+            Constant *Folded = ConstantExpr::getCompare(CI->getPredicate(),
+                                                        LHS.ConstVal, RHS.ConstVal);
+            if (Folded) {
                 errs() << "[SCCP]   comparison folded to " << *Folded << "\n";
                 markConstant(CI, Folded);
                 return;
@@ -164,20 +169,31 @@ struct OurSCCPPass : public FunctionPass {
         errs() << "[SCCP]   comparison waiting (operand(s) undef)\n";
     }
 
-    void visitCastInst(CastInst *Cast,const DataLayout &DL) {
+    void visitCastInst(CastInst *Cast) {
         errs() << "[SCCP] visitCastInst: " << Cast->getName() << "\n";
 
         LatticeVal &Op = getLattice(Cast->getOperand(0));
-        if (Op.isOverdefined()) { markOverdefined(Cast); return; }
+
+        if (Op.isOverdefined()) {
+            markOverdefined(Cast);
+            return;
+        }
+
         if (Op.isConstant()) {
-            if (Constant *Folded = ConstantFoldInstruction(Cast, DL)) {
+            Constant *Folded = ConstantExpr::getCast(Cast->getOpcode(),
+                                                    Op.ConstVal,
+                                                    Cast->getType());
+
+            if (Folded) {
                 errs() << "[SCCP]   cast folded to " << *Folded << "\n";
                 markConstant(Cast, Folded);
                 return;
             }
+
             markOverdefined(Cast);
             return;
         }
+
         errs() << "[SCCP]   cast operand still undef\n";
     }
 
@@ -239,7 +255,7 @@ struct OurSCCPPass : public FunctionPass {
                 return;
             }
             for (auto &Case : SI->cases()) {
-                if (Case.getCaseValue() == CV) {
+                if (Case.getCaseValue()->getValue() == CV->getValue()) {
                     errs() << "[SCCP] switch constant " << *CV
                            << " -> case " << Case.getCaseSuccessor()->getName() << "\n";
                     markEdgeExecutable(BB, Case.getCaseSuccessor());
@@ -252,19 +268,19 @@ struct OurSCCPPass : public FunctionPass {
         }
     }
 
-    void visitNonPHI(Instruction *I,const DataLayout &DL) {
+    void visitNonPHI(Instruction *I) {
         if (auto *BI = dyn_cast<BinaryOperator>(I)) {
-            visitBinaryOp(BI, DL);
+            visitBinaryOp(BI);
             return;
         }
 
         if (auto *CI = dyn_cast<CmpInst>(I)) {
-            visitCmpInst(CI, DL);
+            visitCmpInst(CI);
             return;
         }
 
         if (auto *Cast = dyn_cast<CastInst>(I)) {
-            visitCastInst(Cast, DL);
+            visitCastInst(Cast);
             return;
         }
 
@@ -279,7 +295,6 @@ struct OurSCCPPass : public FunctionPass {
 
     void runSCCP(Function &F) {
         errs() << "\n=== SCCP phase: function " << F.getName() << " ===\n";
-        const DataLayout &DL = F.getParent()->getDataLayout();
         markEdgeExecutable(nullptr, &F.getEntryBlock());
 
         for (auto &Arg : F.args()) {
@@ -309,7 +324,7 @@ struct OurSCCPPass : public FunctionPass {
                         if (I->isTerminator())
                             visitTerminator(I, Dst);
                         else
-                            visitNonPHI(I,DL);
+                            visitNonPHI(I);
                     }
                 }
             }
@@ -331,7 +346,7 @@ struct OurSCCPPass : public FunctionPass {
                         if (UI->isTerminator())
                             visitTerminator(UI, UBB);
                         else
-                            visitNonPHI(UI,DL);
+                            visitNonPHI(UI);
                     }
                 }
             }
@@ -368,7 +383,9 @@ struct OurSCCPPass : public FunctionPass {
                                        << ": always -> " << TakenBB->getName()
                                        << "  (dead: " << DeadBB->getName() << ")\n";
 
-                                DeadBB->removePredecessor(&BB);
+                                if (TakenBB != DeadBB)
+                                    DeadBB->removePredecessor(&BB);
+
                                 BranchInst::Create(TakenBB, BI);
                                 ToDelete.push_back(BI);
                                 Changed = true;

@@ -1,18 +1,8 @@
 #ifndef OURSCCP_PASS_H
 #define OURSCCP_PASS_H
 
-#include "llvm/Pass.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Instruction.h"
-#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/CFG.h"
-#include "llvm/Support/raw_ostream.h"
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
-#include <queue>
+
 
 using namespace llvm;
 
