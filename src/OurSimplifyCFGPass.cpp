@@ -17,7 +17,6 @@ struct OurSimplifyCFGPass : public FunctionPass {
     static char ID;
     OurSimplifyCFGPass() : FunctionPass(ID) {}
 
-    // Removes basic blocks with no predecessors, returns true if block was removed 
     bool eliminateDeadBlocks(Function &F) {
         bool AnyChanged = false;
         bool Changed    = true;
@@ -55,8 +54,7 @@ struct OurSimplifyCFGPass : public FunctionPass {
 
                 for (auto &InstRef : *BB)
                     if (!InstRef.getType()->isVoidTy() && !InstRef.use_empty())
-                        InstRef.replaceAllUsesWith(
-                            UndefValue::get(InstRef.getType()));
+                        InstRef.replaceAllUsesWith(UndefValue::get(InstRef.getType()));
 
                 while (!BB->empty())
                     BB->back().eraseFromParent();
@@ -67,7 +65,6 @@ struct OurSimplifyCFGPass : public FunctionPass {
         return AnyChanged;
     }
 
-    // Eliminates PHI nodes for blocks with single predecessor, returns true if any PHI was eliminated 
     bool eliminateSinglePredPHIs(Function &F) {
         bool Changed = false;
 
@@ -101,7 +98,6 @@ struct OurSimplifyCFGPass : public FunctionPass {
         return Changed;
     }
 
-     // Merges a block into its predecessor, returns true if any merge occurred 
     bool mergeBlockIntoPredecessor(Function &F) {
         bool AnyChanged = false;
         bool Changed    = true;
@@ -141,7 +137,6 @@ struct OurSimplifyCFGPass : public FunctionPass {
         return AnyChanged;
     }
 
-    // Eliminates blocks with only an unconditional branch, returns true if any block was threaded
     bool eliminateRedundantBranches(Function &F) {
         bool AnyChanged = false;
         bool Changed    = true;
@@ -164,10 +159,8 @@ struct OurSimplifyCFGPass : public FunctionPass {
                 for (auto *Pred : predecessors(&BB))
                     Preds.push_back(Pred);
 
-                // Skip blocks with no predecessors
                 if (Preds.empty()) continue;
 
-                // Check for conflicting PHI incoming values
                 bool ConflictingPred = false;
                 for (auto &InstRef : *Succ) {
                     PHINode *Phi = dyn_cast<PHINode>(&InstRef);
@@ -185,7 +178,6 @@ struct OurSimplifyCFGPass : public FunctionPass {
                     }
                 }
                 
-                // Skip if PHI values conflict
                 if (ConflictingPred) continue;
 
                 errs() << "[SimplifyCFG] eliminateRedundantBranch: threading "
@@ -200,9 +192,7 @@ struct OurSimplifyCFGPass : public FunctionPass {
 
                     Value *ValFromBB = Phi->getIncomingValue(Idx);
 
-                    for (auto *Pred : Preds) {
-                        
-                        // Skip existing PHI entries
+                    for (auto *Pred : Preds) {                        
                         if (Phi->getBasicBlockIndex(Pred) >= 0) continue;
                         Phi->addIncoming(ValFromBB, Pred);
                     }
@@ -251,7 +241,7 @@ struct OurSimplifyCFGPass : public FunctionPass {
             LocalChanged = false;
             LocalChanged |= eliminateDeadBlocks(F);
             LocalChanged |= eliminateSinglePredPHIs(F);
-            // Merge requires block with no PHI nodes before merging, so we run eliminateSinglePredPHIs first
+            // We call eliminateSinglePredPHIs first because merge requires block with no PHI nodes
             LocalChanged |= mergeBlockIntoPredecessor(F);
             LocalChanged |= eliminateRedundantBranches(F);
             Changed |= LocalChanged;
